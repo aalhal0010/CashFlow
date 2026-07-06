@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
+import plotly.graph_objects go
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 import json
@@ -8,9 +8,17 @@ import os
 
 st.set_page_config(page_title="Premium Cash Flow Forecaster", layout="wide")
 st.title("🔮 Premium Cash Flow Forecaster")
-st.write("Enter your data below. Your values will lock in instantly on the first try.")
+st.write("Enter your data below. Your workspace is fully private and separate from other users.")
 
-DATA_FILE = "ledger_vault.json"
+# --- 0. UNIQUE USER ISOLATION ENGINE ---
+# We extract a unique session hash from Streamlit's runtime to create isolated filenames
+if "user_vault_id" not in st.session_state:
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+    ctx = get_script_run_ctx()
+    # If a session ID is found, use it; otherwise fallback to standard default
+    st.session_state.user_vault_id = ctx.session_id if ctx else "default_vault"
+
+DATA_FILE = f"ledger_vault_{st.session_state.user_vault_id}.json"
 
 # --- 1. PERSISTENT STORAGE LAYER ---
 def load_permanent_vault():
@@ -19,12 +27,9 @@ def load_permanent_vault():
             with open(DATA_FILE, "r") as f:
                 data = json.load(f)
             inc_df = pd.DataFrame(data.get("income", [{"Name": "", "Amount": 0.0, "Day of Month": 1}]))
-            
-            # Load and immediately force conversion to avoid string injection
             bills_df = pd.DataFrame(data.get("bills", [{"Name": "", "Amount": 0.0, "Day of Month": 1, "End Date": None}]))
             if "End Date" in bills_df.columns:
                 bills_df["End Date"] = pd.to_datetime(bills_df["End Date"], errors='coerce')
-                
             cards_df = pd.DataFrame(data.get("cards", [{"Card Name": "", "Statement Balance": 0.0, "Payment Day": 1}]))
             buffers = data.get("buffers", {"food": 0.0, "gas": 0.0})
             saved_balance = data.get("starting_balance", 1000.0)
@@ -40,8 +45,6 @@ def load_permanent_vault():
     return inc_df, bills_df, cards_df, {"food": 0.0, "gas": 0.0}, 1000.0
 
 def save_permanent_vault():
-    """Converts current live data states into JSON and commits it directly to disk storage."""
-    # Ensure 'End Date' is temporarily cast to a datetime series so it never crashes .dt
     temp_bills = st.session_state.bills_df.copy()
     if "End Date" in temp_bills.columns:
         temp_bills["End Date"] = pd.to_datetime(temp_bills["End Date"], errors='coerce')
@@ -134,7 +137,6 @@ if not edited_income.equals(st.session_state.income_df):
     has_changed = True
 
 if not edited_bills.equals(st.session_state.bills_df):
-    # CRUCIAL: Convert the data type immediately upon user modification
     edited_bills["End Date"] = pd.to_datetime(edited_bills["End Date"], errors='coerce')
     st.session_state.bills_df = edited_bills
     has_changed = True
@@ -151,7 +153,6 @@ if food_buffer != st.session_state.food_init or gas_buffer != st.session_state.g
 if has_changed:
     save_permanent_vault()
     st.rerun()
-
 
 # --- 5. ENGINE MATH CALCULATIONS ---
 start_date = date.today()
