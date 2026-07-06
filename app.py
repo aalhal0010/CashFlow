@@ -4,19 +4,22 @@ import plotly.graph_objects as go
 from datetime import date
 from dateutil.relativedelta import relativedelta
 import json
-from streamlit_local_storage import StLocalStorage
+# Fix: Import the correct class name from the library
+from streamlit_local_storage import LocalStorage
 
 st.set_page_config(page_title="Premium Cash Flow Forecaster", layout="wide")
 st.title("🔮 Premium Cash Flow Forecaster")
 st.write("Your data is saved securely inside your browser. Refreshing the page will not lose your progress!")
 
 # --- 1. INITIALIZE BROWSER LOCAL STORAGE ---
-local_storage = StLocalStorage()
+# Fix: Instantiate using LocalStorage()
+local_storage = LocalStorage()
 
 def load_browser_vault():
     """Fetches saving payload out of browser storage profile, or builds fresh models."""
     try:
-        raw_data = local_storage.get("ledger_vault_data")
+        # Fix: Use library's native .getItem() syntax
+        raw_data = local_storage.getItem("ledger_vault_data")
         if raw_data and str(raw_data).strip() != "":
             data = json.loads(raw_data)
             
@@ -42,7 +45,6 @@ def load_browser_vault():
 
 def save_browser_vault():
     """Pushes encrypted JSON payload back onto client browser cookies tracker."""
-    temp_bills = st.session_state.income_df.copy() # fallback template instantiation reference
     temp_bills = st.session_state.bills_df.copy()
     if "End Date" in temp_bills.columns:
         temp_bills["End Date"] = pd.to_datetime(temp_bills["End Date"], errors='coerce')
@@ -59,8 +61,8 @@ def save_browser_vault():
             "gas": float(st.session_state.gas_val)
         }
     }
-    # Save directly to user's computer cache instead of the cloud host server files
-    local_storage.set("ledger_vault_data", json.dumps(payload))
+    # Fix: Use library's native .setItem() syntax
+    local_storage.setItem("ledger_vault_data", json.dumps(payload))
 
 # Bootstrap values checking
 if 'income_df' not in st.session_state:
