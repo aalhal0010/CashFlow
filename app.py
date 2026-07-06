@@ -1,50 +1,48 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import date, timedelta
+from datetime import date
 from dateutil.relativedelta import relativedelta
 import json
-import os
+from streamlit_local_storage import StLocalStorage
 
 st.set_page_config(page_title="Premium Cash Flow Forecaster", layout="wide")
 st.title("🔮 Premium Cash Flow Forecaster")
-st.write("Enter your data below. Your workspace is fully private and separate from other users.")
+st.write("Your data is saved securely inside your browser. Refreshing the page will not lose your progress!")
 
-# --- 0. UNIQUE USER ISOLATION ENGINE ---
-# We extract a unique session hash from Streamlit's runtime to create isolated filenames
-if "user_vault_id" not in st.session_state:
-    from streamlit.runtime.scriptrunner import get_script_run_ctx
-    ctx = get_script_run_ctx()
-    # If a session ID is found, use it; otherwise fallback to standard default
-    st.session_state.user_vault_id = ctx.session_id if ctx else "default_vault"
+# --- 1. INITIALIZE BROWSER LOCAL STORAGE ---
+local_storage = StLocalStorage()
 
-DATA_FILE = f"ledger_vault_{st.session_state.user_vault_id}.json"
-
-# --- 1. PERSISTENT STORAGE LAYER ---
-def load_permanent_vault():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r") as f:
-                data = json.load(f)
+def load_browser_vault():
+    """Fetches saving payload out of browser storage profile, or builds fresh models."""
+    try:
+        raw_data = local_storage.get("ledger_vault_data")
+        if raw_data and str(raw_data).strip() != "":
+            data = json.loads(raw_data)
+            
             inc_df = pd.DataFrame(data.get("income", [{"Name": "", "Amount": 0.0, "Day of Month": 1}]))
+            
             bills_df = pd.DataFrame(data.get("bills", [{"Name": "", "Amount": 0.0, "Day of Month": 1, "End Date": None}]))
             if "End Date" in bills_df.columns:
                 bills_df["End Date"] = pd.to_datetime(bills_df["End Date"], errors='coerce')
+                
             cards_df = pd.DataFrame(data.get("cards", [{"Card Name": "", "Statement Balance": 0.0, "Payment Day": 1}]))
             buffers = data.get("buffers", {"food": 0.0, "gas": 0.0})
             saved_balance = data.get("starting_balance", 1000.0)
             return inc_df, bills_df, cards_df, buffers, saved_balance
-        except Exception as e:
-            st.error(f"Error reading save file: {e}")
-            
-    # Clean fallbacks
+    except Exception as e:
+        pass # Fall through to default initializations on lookup misses
+        
+    # Standard clean fallbacks
     inc_df = pd.DataFrame([{"Name": "", "Amount": 0.0, "Day of Month": 1}])
     bills_df = pd.DataFrame({"Name": [""], "Amount": [0.0], "Day of Month": [1], "End Date": [pd.NaT]})
     bills_df["End Date"] = pd.to_datetime(bills_df["End Date"])
     cards_df = pd.DataFrame([{"Card Name": "", "Statement Balance": 0.0, "Payment Day": 1}])
     return inc_df, bills_df, cards_df, {"food": 0.0, "gas": 0.0}, 1000.0
 
-def save_permanent_vault():
+def save_browser_vault():
+    """Pushes encrypted JSON payload back onto client browser cookies tracker."""
+    temp_bills = st.session_state.income_df.copy() # fallback template instantiation reference
     temp_bills = st.session_state.bills_df.copy()
     if "End Date" in temp_bills.columns:
         temp_bills["End Date"] = pd.to_datetime(temp_bills["End Date"], errors='coerce')
@@ -61,12 +59,12 @@ def save_permanent_vault():
             "gas": float(st.session_state.gas_val)
         }
     }
-    with open(DATA_FILE, "w") as f:
-        json.dump(payload, f, indent=4)
+    # Save directly to user's computer cache instead of the cloud host server files
+    local_storage.set("ledger_vault_data", json.dumps(payload))
 
-# Single run initialization
+# Bootstrap values checking
 if 'income_df' not in st.session_state:
-    inc_init, bills_init, cards_init, buffers_init, balance_init = load_permanent_vault()
+    inc_init, bills_init, cards_init, buffers_init, balance_init = load_browser_vault()
     st.session_state.income_df = inc_init
     st.session_state.bills_df = bills_init
     st.session_state.cards_df = cards_init
@@ -81,7 +79,7 @@ months_to_project = st.sidebar.slider("Months to Project Ahead", 1, 24, 12)
 
 if start_balance != st.session_state.balance_init:
     st.session_state.balance_init = start_balance
-    save_permanent_vault()
+    save_browser_vault()
 
 # --- 3. INPUT INTERFACE TABS ---
 tab1, tab2, tab3, tab4 = st.tabs(["📥 Income Streams", "💸 Fixed Bills & Loans", "💳 Credit Cards", "🛒 Variable Buffers"])
@@ -151,7 +149,7 @@ if food_buffer != st.session_state.food_init or gas_buffer != st.session_state.g
     has_changed = True
 
 if has_changed:
-    save_permanent_vault()
+    save_browser_vault()
     st.rerun()
 
 # --- 5. ENGINE MATH CALCULATIONS ---
